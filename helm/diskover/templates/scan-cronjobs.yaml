@@ -36,10 +36,7 @@ spec:
               imagePullPolicy: {{ (($.Values.scanner.image).pullPolicy) | default "IfNotPresent" }}
               command: ["/bin/bash", "-c"]
               args:
-                - >-
-                  exec python3 /opt/diskover/diskover.py
-                  -i "diskover-{{ .name }}-$(date +%Y%m%d)"
-                  {{ $.Values.scanner.extraArgs }} /data
+                - 'exec python3 /opt/diskover/diskover.py -i "diskover-{{ .name }}-$(date +%Y%m%d)"{{ with $.Values.scanner.extraArgs }} {{ . }}{{ end }} /data'
               env:
                 {{- include "diskover.esEnv" $ | nindent 16 }}
               resources:

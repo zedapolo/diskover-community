@@ -31,6 +31,9 @@ spec:
         app.kubernetes.io/component: web
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/web-configmap.yaml") . | sha256sum }}
+        {{- if and .Values.identities.enabled .Values.identities.mountInWeb }}
+        checksum/identities: {{ include (print $.Template.BasePath "/identities-configmap.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       securityContext:
         seccompProfile:
@@ -61,6 +64,16 @@ spec:
           volumeMounts:
             - { name: config, mountPath: /etc/diskover, readOnly: true }
             - { name: tmp, mountPath: /tmp }
+            {{- if and .Values.identities.enabled .Values.identities.mountInWeb }}
+            - name: identities
+              mountPath: /etc/passwd
+              subPath: {{ .Values.identities.passwdKey | default "passwd" }}
+              readOnly: true
+            - name: identities
+              mountPath: /etc/group
+              subPath: {{ .Values.identities.groupKey | default "group" }}
+              readOnly: true
+            {{- end }}
         - name: php-fpm
           image: {{ $webImage }}
           imagePullPolicy: {{ ((.Values.web.image).pullPolicy) | default "IfNotPresent" }}
@@ -78,6 +91,16 @@ spec:
             - { name: config, mountPath: /etc/diskover, readOnly: true }
             - { name: tmp, mountPath: /tmp }
             - { name: data, mountPath: /data }
+            {{- if and .Values.identities.enabled .Values.identities.mountInWeb }}
+            - name: identities
+              mountPath: /etc/passwd
+              subPath: {{ .Values.identities.passwdKey | default "passwd" }}
+              readOnly: true
+            - name: identities
+              mountPath: /etc/group
+              subPath: {{ .Values.identities.groupKey | default "group" }}
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -87,3 +110,8 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ $fn }}-web-data
+        {{- if and .Values.identities.enabled .Values.identities.mountInWeb }}
+        - name: identities
+          configMap:
+            name: {{ include "diskover.identitiesConfigMap" . }}
+        {{- end }}

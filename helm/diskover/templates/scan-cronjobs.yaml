@@ -17,6 +17,11 @@ spec:
     spec:
       backoffLimit: 0
       template:
+        {{- if $.Values.identities.enabled }}
+        metadata:
+          annotations:
+            checksum/identities: {{ include (print $.Template.BasePath "/identities-configmap.yaml") $ | sha256sum }}
+        {{- end }}
         spec:
           restartPolicy: Never
           securityContext:
@@ -60,6 +65,16 @@ spec:
                 {{- else }}
                 - { name: scan-data, mountPath: {{ $scan.scanPath | default "/data" }}, readOnly: true }
                 {{- end }}
+                {{- if $.Values.identities.enabled }}
+                - name: identities
+                  mountPath: /etc/passwd
+                  subPath: {{ $.Values.identities.passwdKey | default "passwd" }}
+                  readOnly: true
+                - name: identities
+                  mountPath: /etc/group
+                  subPath: {{ $.Values.identities.groupKey | default "group" }}
+                  readOnly: true
+                {{- end }}
                 - { name: tmp, mountPath: /tmp }
           volumes:
             {{- if $scan.shares }}
@@ -91,6 +106,11 @@ spec:
             {{- else if $scan.volume }}
             - name: scan-data
               {{- toYaml $scan.volume | nindent 14 }}
+            {{- end }}
+            {{- if $.Values.identities.enabled }}
+            - name: identities
+              configMap:
+                name: {{ include "diskover.identitiesConfigMap" $ }}
             {{- end }}
             - name: tmp
               emptyDir: {}

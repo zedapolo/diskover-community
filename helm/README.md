@@ -216,6 +216,45 @@ Puis ⚙ → **Indices** → sélectionner l'index `diskover-<nom>-<date>` → *
 | `scanner.extraArgs` | `""` | Arguments de `diskover.py` (ex. `--threads 8`) |
 | `scans[]` | `[]` | Un CronJob par entrée |
 
+### Résolution des utilisateurs et groupes (UID/GID)
+
+Le scanner utilise les bases système `passwd` et `group` pour convertir les UID/GID
+des fichiers en noms. Activez `identities` et fournissez les deux fichiers soit
+directement dans les valeurs Helm, soit depuis un ConfigMap existant :
+
+```yaml
+identities:
+  enabled: true
+  # Option inline : fournir le contenu complet des fichiers passwd et group.
+  passwd: |
+    root:x:0:0:root:/root:/bin/bash
+    jdupont:x:10542:10000:Jean Dupont:/home/jdupont:/sbin/nologin
+  group: |
+    root:x:0:
+    direction:x:10000:jdupont
+```
+
+Le contenu ci-dessus est illustratif : comme les fichiers montés remplacent
+`/etc/passwd` et `/etc/group` dans le conteneur, fournissez les entrées système
+nécessaires en plus des utilisateurs et groupes à reconnaître.
+
+Pour un ConfigMap existant, créez-le dans le même namespace que Helm :
+
+```bash
+oc create configmap diskover-identities --from-file=passwd=./passwd --from-file=group=./group
+```
+
+Puis configurez `identities.enabled: true` et
+`identities.configMapName: diskover-identities`. Les clés par défaut sont
+`passwd` et `group`; elles peuvent être changées avec `passwdKey` et `groupKey`.
+Le montage est activé pour les CronJobs scanner. `mountInWeb: true` le monte
+également dans les conteneurs de l'interface web, si nécessaire.
+
+Une mise à jour des valeurs Helm met à jour le ConfigMap généré et le modèle des
+CronJobs; les futurs pods scanner utiliseront les fichiers mis à jour. Pour que
+la résolution fonctionne, `diskover.ownersgroups.uidgidonly` doit rester à
+`false` (valeur par défaut). Les ConfigMaps Kubernetes sont limités à 1 Mio.
+
 ### Entrées `scans[]`
 
 Chaque entrée de `scans[]` crée un CronJob dédié. 

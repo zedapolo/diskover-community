@@ -90,6 +90,36 @@ scanner:
   extraArgs: ""            # arguments additionnels de diskover.py (ex: "--threads 8")
 
 # ---------------------------------------------------------------------------
+# Mappage des identités (utilisateurs / groupes SSSD, Active Directory, LDAP)
+# Permet à Diskover de convertir nativement les UID/GID des fichiers en noms
+# réels d'utilisateurs et de groupes (via /etc/passwd et /etc/group).
+# ---------------------------------------------------------------------------
+identities:
+  enabled: false
+
+  # Option A : Référencer un ConfigMap existant
+  # (créé par ex. avec : oc create configmap diskover-identities --from-file=passwd=... --from-file=group=...)
+  configMapName: ""
+  # Noms des clés dans ce ConfigMap (ou du ConfigMap généré par Helm)
+  passwdKey: "passwd"
+  groupKey: "group"
+
+  # Option B : Fournir le contenu inline (Helm crée automatiquement le ConfigMap)
+  # Obligatoire tous les deux si enabled=true et configMapName est vide.
+  passwd: ""
+  # passwd: |
+  #   root:x:0:0:root:/root:/bin/bash
+  #   jdupont:x:10542:10000:Jean Dupont:/home/jdupont:/bin/bash
+  #   smartin:x:10543:10000:Sophie Martin:/home/smartin:/bin/bash
+  group: ""
+  # group: |
+  #   root:x:0:
+  #   direction:x:10000:jdupont,smartin
+
+  # Monter également les identités dans le pod diskover-web (false par défaut)
+  mountInWeb: false
+
+# ---------------------------------------------------------------------------
 # Entrées `scans` (un CronJob par entrée)
 #
 # NOTE IMPORTANTE (Diskover Community Edition) :

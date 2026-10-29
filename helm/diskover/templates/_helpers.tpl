@@ -85,3 +85,12 @@ Image diskover-scanner :
 - name: ES_SSLVERIFICATION
   value: {{ ternary "true" "false" .Values.elasticsearch.sslVerification | quote }}
 {{- end -}}
+
+{{/* Nom du ConfigMap d'identités (passwd / group) */}}
+{{- define "diskover.identitiesConfigMap" -}}
+{{- if .Values.identities.configMapName -}}
+{{- .Values.identities.configMapName -}}
+{{- else -}}
+{{- printf "%s-identities" (include "diskover.fullname" .) -}}
+{{- end -}}
+{{- end -}}

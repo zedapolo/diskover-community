@@ -1,0 +1,15 @@
+{{- if and .Values.identities.enabled (not .Values.identities.configMapName) }}
+{{- $passwd := required "identities.passwd est obligatoire quand identities.enabled=true et qu'aucun ConfigMap existant n'est utilisé" .Values.identities.passwd }}
+{{- $group := required "identities.group est obligatoire quand identities.enabled=true et qu'aucun ConfigMap existant n'est utilisé" .Values.identities.group }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "diskover.fullname" . }}-identities
+  labels:
+    {{- include "diskover.labels" . | nindent 4 }}
+data:
+  {{ .Values.identities.passwdKey | default "passwd" | quote }}: |
+    {{- $passwd | nindent 4 }}
+  {{ .Values.identities.groupKey | default "group" | quote }}: |
+    {{- $group | nindent 4 }}
+{{- end }}

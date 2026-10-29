@@ -1,15 +1,15 @@
 {{- $fn := include "diskover.fullname" . }}
 {{- $scannerImage := include "diskover.scannerImage" . }}
-{{- range .Values.scans }}
+{{- range $scan := .Values.scans }}
 ---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ $fn }}-scan-{{ .name }}
+  name: {{ $fn }}-scan-{{ $scan.name }}
   labels:
     {{- include "diskover.labels" $ | nindent 4 }}
 spec:
-  schedule: {{ .schedule | quote }}
+  schedule: {{ $scan.schedule | quote }}
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -36,7 +36,7 @@ spec:
               imagePullPolicy: {{ (($.Values.scanner.image).pullPolicy) | default "IfNotPresent" }}
               command: ["/bin/bash", "-c"]
               args:
-                - 'exec python3 /opt/diskover/diskover.py -i "diskover-{{ .name }}-$(date +%Y%m%d)"{{ with $.Values.scanner.extraArgs }} {{ . }}{{ end }} /data'
+                - 'exec python3 /opt/diskover/diskover.py -i "{{ $scan.indexName | default (printf "diskover-%s-$(date +%%Y%%m%%d)" $scan.name) }}"{{ with $.Values.scanner.extraArgs }} {{ . }}{{ end }} {{ $scan.scanPath | default "/data" }}'
               env:
                 {{- include "diskover.esEnv" $ | nindent 16 }}
               resources:
@@ -45,17 +45,53 @@ spec:
                 allowPrivilegeEscalation: false
                 capabilities: { drop: [ALL] }
               volumeMounts:
-                - { name: scan-data, mountPath: /data, readOnly: true }
+                {{- if $scan.shares }}
+                {{- range $share := $scan.shares }}
+                - name: share-{{ $share.name }}
+                  mountPath: {{ $share.mountPath | default (printf "/data/%s" $share.name) }}
+                  readOnly: true
+                {{- end }}
+                {{- else if $scan.volumes }}
+                {{- range $vol := $scan.volumes }}
+                - name: {{ $vol.name }}
+                  mountPath: {{ $vol.mountPath | default (printf "/data/%s" $vol.name) }}
+                  readOnly: true
+                {{- end }}
+                {{- else }}
+                - { name: scan-data, mountPath: {{ $scan.scanPath | default "/data" }}, readOnly: true }
+                {{- end }}
                 - { name: tmp, mountPath: /tmp }
           volumes:
-            - name: scan-data
-              {{- if .nfs }}
+            {{- if $scan.shares }}
+            {{- range $share := $scan.shares }}
+            - name: share-{{ $share.name }}
               persistentVolumeClaim:
-                claimName: {{ $fn }}-scan-{{ .name }}
+                claimName: {{ $fn }}-scan-{{ $scan.name }}-{{ $share.name }}
                 readOnly: true
+            {{- end }}
+            {{- else if $scan.volumes }}
+            {{- range $vol := $scan.volumes }}
+            - name: {{ $vol.name }}
+              {{- if $vol.persistentVolumeClaim }}
+              persistentVolumeClaim:
+                claimName: {{ $vol.persistentVolumeClaim.claimName }}
+                readOnly: true
+              {{- else if $vol.nfs }}
+              nfs:
+                {{- toYaml $vol.nfs | nindent 16 }}
               {{- else }}
-              {{- toYaml .volume | nindent 14 }}
+              {{- toYaml (omit $vol "name" "mountPath") | nindent 14 }}
               {{- end }}
+            {{- end }}
+            {{- else if $scan.nfs }}
+            - name: scan-data
+              persistentVolumeClaim:
+                claimName: {{ $fn }}-scan-{{ $scan.name }}
+                readOnly: true
+            {{- else if $scan.volume }}
+            - name: scan-data
+              {{- toYaml $scan.volume | nindent 14 }}
+            {{- end }}
             - name: tmp
               emptyDir: {}
 {{- end }}

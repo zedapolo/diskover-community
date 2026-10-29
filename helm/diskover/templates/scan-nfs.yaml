@@ -1,44 +1,85 @@
-{{- /* PV + PVC NFS en lecture seule, créés pour chaque scan qui définit `nfs:`.
+{{- /* PV + PVC NFS en lecture seule, créés pour chaque scan qui définit `nfs:` ou `shares:`.
        Un PV est cluster-scoped : l'installation Helm requiert alors des droits cluster-admin
-       (sinon, faites créer le PV par l'admin et utilisez `volume.persistentVolumeClaim`). */ -}}
+       (sinon, faites créer le PV par l'admin et utilisez `volume` ou `volumes`). */ -}}
 {{- $fn := include "diskover.fullname" . }}
-{{- range .Values.scans }}
-{{- if .nfs }}
+{{- range $scan := .Values.scans }}
+{{- /* Cas 1 : mono-partage NFS rétro-compatible */ -}}
+{{- if $scan.nfs }}
 ---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: {{ $fn }}-{{ $.Release.Namespace }}-{{ .name }}
+  name: {{ $fn }}-{{ $.Release.Namespace }}-{{ $scan.name }}
   labels:
     {{- include "diskover.labels" $ | nindent 4 }}
 spec:
   capacity:
-    storage: {{ .nfs.size | default "1Ti" }}
+    storage: {{ $scan.nfs.size | default "1Ti" }}
   accessModes: [ReadOnlyMany]
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
-    {{- toYaml (.nfs.mountOptions | default (list "nfsvers=4.1" "ro" "noatime")) | nindent 4 }}
+    {{- toYaml ($scan.nfs.mountOptions | default (list "nfsvers=4.1" "ro" "noatime")) | nindent 4 }}
   nfs:
-    server: {{ .nfs.server }}
-    path: {{ .nfs.path }}
+    server: {{ $scan.nfs.server }}
+    path: {{ $scan.nfs.path }}
     readOnly: true
   claimRef:
     namespace: {{ $.Release.Namespace }}
-    name: {{ $fn }}-scan-{{ .name }}
+    name: {{ $fn }}-scan-{{ $scan.name }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ $fn }}-scan-{{ .name }}
+  name: {{ $fn }}-scan-{{ $scan.name }}
   labels:
     {{- include "diskover.labels" $ | nindent 4 }}
 spec:
   accessModes: [ReadOnlyMany]
   storageClassName: ""
-  volumeName: {{ $fn }}-{{ $.Release.Namespace }}-{{ .name }}
+  volumeName: {{ $fn }}-{{ $.Release.Namespace }}-{{ $scan.name }}
   resources:
     requests:
-      storage: {{ .nfs.size | default "1Ti" }}
+      storage: {{ $scan.nfs.size | default "1Ti" }}
+{{- end }}
+
+{{- /* Cas 2 : multi-partages NFS regroupés dans le même scan (même index) */ -}}
+{{- range $share := $scan.shares }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $fn }}-{{ $.Release.Namespace }}-{{ $scan.name }}-{{ $share.name }}
+  labels:
+    {{- include "diskover.labels" $ | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ $share.size | default "1Ti" }}
+  accessModes: [ReadOnlyMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    {{- toYaml ($share.mountOptions | default (list "nfsvers=4.1" "ro" "noatime")) | nindent 4 }}
+  nfs:
+    server: {{ $share.server }}
+    path: {{ $share.path }}
+    readOnly: true
+  claimRef:
+    namespace: {{ $.Release.Namespace }}
+    name: {{ $fn }}-scan-{{ $scan.name }}-{{ $share.name }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $fn }}-scan-{{ $scan.name }}-{{ $share.name }}
+  labels:
+    {{- include "diskover.labels" $ | nindent 4 }}
+spec:
+  accessModes: [ReadOnlyMany]
+  storageClassName: ""
+  volumeName: {{ $fn }}-{{ $.Release.Namespace }}-{{ $scan.name }}-{{ $share.name }}
+  resources:
+    requests:
+      storage: {{ $share.size | default "1Ti" }}
 {{- end }}
 {{- end }}

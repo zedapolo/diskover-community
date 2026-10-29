@@ -50,10 +50,25 @@ elasticsearch:
     # storageClassName: ocs-storagecluster-ceph-rbd
 
 # 5. Définition des scans planifiés (NFS internes)
+# Scanner PLUSIEURS exports NFS dans un MÊME index :
+# Utilisez `shares:` ci-dessous. Les partages sont montés sous /data/<nom>
+# et scannés ensemble en un seul passage dans le même index.
 scans:
-  - name: share-prod
+  - name: all-shares
     schedule: "0 2 * * *"
-    nfs:
-      server: nas.corp.local
-      path: /exports/data
-      mountOptions: [nfsvers=4.1, ro, noatime]
+    shares:
+      - name: projets
+        server: nas.corp.local
+        path: /exports/projets
+        size: 10Ti
+        mountOptions: [nfsvers=4.1, ro, noatime]
+      - name: archives
+        server: nas.corp.local
+        path: /exports/archives
+        size: 20Ti
+        mountOptions: [nfsvers=4.1, ro, noatime]
+      - name: commun
+        server: nas2.corp.local
+        path: /exports/commun
+        size: 5Ti
+        mountOptions: [nfsvers=4.1, ro, noatime]

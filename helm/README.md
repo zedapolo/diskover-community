@@ -218,14 +218,26 @@ Puis ⚙ → **Indices** → sélectionner l'index `diskover-<nom>-<date>` → *
 
 ### Entrées `scans[]`
 
+Chaque entrée de `scans[]` crée un CronJob dédié. 
+
+> [!IMPORTANT]
+> **Indexation multi-partages (Diskover Community Edition) :**
+> Dans Diskover Community Edition, l'indexation de multiples partages dans un **même index Elasticsearch** doit obligatoirement se faire en un seul scan (l'option `--addtoindex` pour ajouter des chemins à un index existant est restreinte à la version commerciale).
+> Pour regrouper plusieurs exports NFS dans le même index, utilisez la clé `shares:` : les exports sont montés comme sous-répertoires de `/data` (`/data/<name>`) et indexés ensemble dans `diskover-<name>-AAAAMMJJ`.
+
 | Clé | Description |
 |---|---|
-| `name` | Nom court en minuscules ; sert aux noms de ressources et à l'index `diskover-<name>-AAAAMMJJ` |
+| `name` | Nom court en minuscules ; sert aux noms de ressources et au nom d'index par défaut `diskover-<name>-AAAAMMJJ` |
 | `schedule` | Expression cron (ex: `"0 2 * * *"`) |
-| `nfs.server`, `nfs.path` | Le chart crée un PV + PVC NFS en `ReadOnlyMany` (`Retain`) |
-| `nfs.size` | Capacité indicative (défaut `1Ti`) |
-| `nfs.mountOptions` | Défaut : `nfsvers=4.1, ro, noatime` |
-| `volume` | Alternative à `nfs` : source de volume Kubernetes, ex. un PVC existant |
+| `indexName` | *(Optionnel)* Modèle de nom d'index (défaut : `"diskover-<name>-$(date +%Y%m%d)"`) |
+| `shares[]` | **Multi-partages NFS (même index)** : liste d'exports montés sous `/data/<name>` |
+| `shares[].name` | Identifiant du partage (sous-dossier de montage `/data/<name>`) |
+| `shares[].server`, `.path` | Serveur NFS et chemin d'export distant |
+| `shares[].size` | Capacité indicative (défaut `1Ti`) |
+| `shares[].mountOptions` | Options de montage (défaut : `[nfsvers=4.1, ro, noatime]`) |
+| `nfs` | **Mono-partage NFS** : monté directement sur `/data` (`server`, `path`, `size`, `mountOptions`) |
+| `volumes[]` | **Multi-volumes K8s existants** : liste de volumes avec `mountPath` sous `/data` |
+| `volume` | **Mono-volume K8s existant** : monté directement sur `/data` |
 
 ---
 

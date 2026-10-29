@@ -89,8 +89,54 @@ scanner:
   supplementalGroups: []   # GID(s) nécessaires pour lire vos partages (NFS/SMB)
   extraArgs: ""            # arguments additionnels de diskover.py (ex: "--threads 8")
 
-# Un CronJob par entrée, données montées en lecture seule sur /data.
-# Deux façons de fournir les données :
-#   - nfs:    le chart crée le PV + PVC NFS (droits cluster-admin requis pour le PV)
-#   - volume: PVC existant (PV créé par votre admin)
+# ---------------------------------------------------------------------------
+# Entrées `scans` (un CronJob par entrée)
+#
+# NOTE IMPORTANTE (Diskover Community Edition) :
+# Dans Diskover CE, un index Elasticsearch ne peut pas être alimenté par des scans
+# successifs séparés (l'option --addtoindex est réservée à l'édition commerciale).
+# Pour indexer PLUSIEURS partages NFS dans un MÊME index, configurez `shares:`
+# ci-dessous : tous les partages seront montés dans le même pod sous /data/<nom>
+# et explorés ensemble en un seul passage dans le même index.
+# ---------------------------------------------------------------------------
 scans: []
+# Exemple 1 : Plusieurs partages NFS indexés ensemble dans le MÊME index
+# - name: global-nas
+#   schedule: "0 2 * * *"
+#   # indexName: "diskover-global-nas-$(date +%Y%m%d)"  # optionnel (valeur par défaut)
+#   shares:
+#     - name: projets          # monté sur /data/projets
+#       server: nas1.corp.local
+#       path: /export/projets
+#       size: 10Ti
+#       mountOptions: [nfsvers=4.1, ro, noatime]
+#     - name: archives         # monté sur /data/archives
+#       server: nas1.corp.local
+#       path: /export/archives
+#       size: 20Ti
+#     - name: docs             # monté sur /data/docs
+#       server: nas2.corp.local
+#       path: /export/docs
+#       size: 5Ti
+#
+# Exemple 2 : Un seul partage NFS
+# - name: archives
+#   schedule: "0 3 * * 0"
+#   nfs:
+#     server: nas.example.com
+#     path: /export/archives
+#     size: 10Ti
+#     mountOptions: [nfsvers=4.1, ro, noatime]
+#
+# Exemple 3 : Volumes Kubernetes pré-existants (PVCs)
+# - name: multi-pvc
+#   schedule: "0 4 * * *"
+#   volumes:
+#     - name: vol-projets
+#       mountPath: /data/projets
+#       persistentVolumeClaim:
+#         claimName: pvc-projets
+#     - name: vol-archives
+#       mountPath: /data/archives
+#       persistentVolumeClaim:
+#         claimName: pvc-archives

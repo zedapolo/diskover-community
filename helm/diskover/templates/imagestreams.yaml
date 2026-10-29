@@ -1,0 +1,15 @@
+{{- if .Values.build.enabled }}
+{{- $fn := include "diskover.fullname" . }}
+{{- range $c := list "web" "scanner" }}
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ $fn }}-{{ $c }}
+  labels:
+    {{- include "diskover.labels" $ | nindent 4 }}
+spec:
+  lookupPolicy:
+    local: true     # permet d'écrire image: <nom>:latest dans les pods du namespace
+{{- end }}
+{{- end }}

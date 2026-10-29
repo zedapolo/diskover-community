@@ -1,0 +1,25 @@
+Diskover déployé avec succès.
+
+{{- if .Values.build.enabled }}
+1. Suivre les builds d'images OpenShift :
+   oc get builds -w
+{{- else }}
+1. Suivre le déploiement des pods (images pré-construites) :
+   oc get pods -l app.kubernetes.io/name=diskover -w
+{{- end }}
+
+2. Vérifier l'état du cluster Elasticsearch :
+   oc get elasticsearch {{ .Values.elasticsearch.name }}
+
+3. Récupérer l'URL de diskover-web :
+   oc get route {{ include "diskover.fullname" . }}-web -o jsonpath='https://{.spec.host}{"\n"}'
+
+4. Identifiants initiaux :
+   Compte par défaut : diskover / darkdata  (à changer impérativement dans Settings)
+
+5. Lancer un scan manuellement :
+   oc create job --from=cronjob/{{ include "diskover.fullname" . }}-scan-<nom> scan-test-$(date +%s)
+   oc logs -f job/scan-test-...
+
+6. Dans l'UI web :
+   ⚙ -> Indices -> Cocher l'index diskover-<nom>-<date> -> Save Selection

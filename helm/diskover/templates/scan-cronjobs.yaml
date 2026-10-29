@@ -1,0 +1,64 @@
+{{- $fn := include "diskover.fullname" . }}
+{{- $scannerImage := include "diskover.scannerImage" . }}
+{{- range .Values.scans }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $fn }}-scan-{{ .name }}
+  labels:
+    {{- include "diskover.labels" $ | nindent 4 }}
+spec:
+  schedule: {{ .schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+            {{- with $.Values.scanner.supplementalGroups }}
+            supplementalGroups:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+          {{- with $.Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: scanner
+              image: {{ $scannerImage }}
+              imagePullPolicy: {{ (($.Values.scanner.image).pullPolicy) | default "IfNotPresent" }}
+              command: ["/bin/bash", "-c"]
+              args:
+                - >-
+                  exec python3 /opt/diskover/diskover.py
+                  -i "diskover-{{ .name }}-$(date +%Y%m%d)"
+                  {{ $.Values.scanner.extraArgs }} /data
+              env:
+                {{- include "diskover.esEnv" $ | nindent 16 }}
+              resources:
+                {{- toYaml $.Values.scanner.resources | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: scan-data, mountPath: /data, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: scan-data
+              {{- if .nfs }}
+              persistentVolumeClaim:
+                claimName: {{ $fn }}-scan-{{ .name }}
+                readOnly: true
+              {{- else }}
+              {{- toYaml .volume | nindent 14 }}
+              {{- end }}
+            - name: tmp
+              emptyDir: {}
+{{- end }}

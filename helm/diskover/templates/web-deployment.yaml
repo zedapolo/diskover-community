@@ -1,0 +1,89 @@
+{{- $fn := include "diskover.fullname" . }}
+{{- $webImage := include "diskover.webImage" . }}
+{{- $isLocalIS := and .Values.build.enabled (not (and .Values.web.image .Values.web.image.repository)) }}
+{{- $triggers := list
+  (dict "from" (dict "kind" "ImageStreamTag" "name" (printf "%s-web:latest" $fn)) "fieldPath" "spec.template.spec.containers[?(@.name==\"nginx\")].image")
+  (dict "from" (dict "kind" "ImageStreamTag" "name" (printf "%s-web:latest" $fn)) "fieldPath" "spec.template.spec.containers[?(@.name==\"php-fpm\")].image") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fn }}-web
+  labels:
+    {{- include "diskover.labels" . | nindent 4 }}
+  annotations:
+    {{- if $isLocalIS }}
+    image.openshift.io/triggers: {{ $triggers | toJson | quote }}
+    {{- end }}
+spec:
+  replicas: 1           # SQLite = un seul écrivain
+  strategy:
+    type: Recreate      # le PVC est en RWO
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: diskover
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: diskover
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: web
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/web-configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: nginx
+          image: {{ $webImage }}
+          imagePullPolicy: {{ ((.Values.web.image).pullPolicy) | default "IfNotPresent" }}
+          command: ["nginx", "-c", "/etc/diskover/nginx.conf", "-g", "daemon off;"]
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 15
+          resources:
+            {{- toYaml .Values.web.resources.nginx | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/diskover, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+        - name: php-fpm
+          image: {{ $webImage }}
+          imagePullPolicy: {{ ((.Values.web.image).pullPolicy) | default "IfNotPresent" }}
+          command: ["php-fpm", "-y", "/etc/diskover/php-fpm.conf", "-F"]
+          env:
+            - name: DATABASE
+              value: /data/diskoverdb.sqlite3
+            {{- include "diskover.esEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.web.resources.phpfpm | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/diskover, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fn }}-web
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $fn }}-web-data

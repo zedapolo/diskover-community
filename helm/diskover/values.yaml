@@ -1,0 +1,108 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Secrets d'authentification pour registres privés (ex: Harbor, Nexus, Quay)
+# Utile en environnement déconnecté / offline
+imagePullSecrets: []
+# - name: regcred
+
+# ---------------------------------------------------------------------------
+# Images de base Red Hat UBI 9 (utilisées par les BuildConfig si build.enabled=true)
+# En environnement déconnecté avec build in-cluster : remplacer par votre miroir.
+# ---------------------------------------------------------------------------
+images:
+  pythonBase: registry.access.redhat.com/ubi9/python-312:latest   # scanner
+  nginxBase: registry.access.redhat.com/ubi9/nginx-126:latest     # diskover-web (+ php-fpm installé au build)
+
+# ---------------------------------------------------------------------------
+# Build des images dans OpenShift (BuildConfig + ImageStream)
+# En environnement offline : passer enabled à false et renseigner web.image.repository
+# et scanner.image.repository pour utiliser vos images pré-construites.
+# ---------------------------------------------------------------------------
+build:
+  enabled: true
+  git:
+    uri: https://github.com/diskoverdata/diskover-community.git
+    ref: v2.3.5
+  pullSecret: ""          # Secret Kubernetes pour pull les images de base sur un registre privé
+  pipIndexUrl: ""         # Miroir PyPI interne (ex: https://nexus.corp.local/repository/pypi/simple)
+  pipExtraArgs: ""        # Arguments pip additionnels (ex: "--trusted-host nexus.corp.local")
+
+# ---------------------------------------------------------------------------
+# Elasticsearch (opérateur ECK - API elasticsearch.k8s.elastic.co/v1)
+# ---------------------------------------------------------------------------
+elasticsearch:
+  create: true            # false => utiliser un cluster ES existant (host/userSecret ci-dessous)
+  name: diskover          # nom du CR Elasticsearch => service <name>-es-http, secret <name>-es-elastic-user
+  version: 8.19.0         # Diskover CE requiert Elasticsearch 8.x
+  image: ""               # Image miroir (ex: registry.corp.local/elastic/elasticsearch:8.19.0). Indispensable en offline si create=true
+  count: 1
+  tls: true               # TLS sur la couche HTTP (certificat auto-signé ECK)
+  sslVerification: false  # Diskover ne permet pas de fournir un CA => vérification désactivée
+  resources:
+    requests: { cpu: "1", memory: 4Gi }
+    limits: { memory: 4Gi }   # le heap JVM est dimensionné automatiquement à 50 % de la limite
+  storage:
+    size: 50Gi
+    storageClassName: ""
+  # --- utilisés uniquement si create=false ---
+  host: ""                # ex: mon-es-es-http.elastic.svc
+  port: 9200
+  user: elastic
+  userSecret:
+    name: ""              # secret contenant le mot de passe
+    key: elastic
+
+# ---------------------------------------------------------------------------
+# diskover-web (nginx + php-fpm dans le même pod)
+# ---------------------------------------------------------------------------
+web:
+  # Image pré-construite (recommandé en environnement offline)
+  image:
+    repository: ""        # Ex: registry.corp.local/diskover/diskover-web (obligatoire si build.enabled=false)
+    tag: ""               # Par défaut appVersion du Chart (2.3.5)
+    pullPolicy: IfNotPresent
+  resources:
+    nginx:   { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 256Mi } }
+    phpfpm:  { requests: { cpu: 250m, memory: 512Mi }, limits: { memory: 1Gi } }
+  persistence:           # base SQLite (comptes, config UI) -> doit survivre aux redémarrages
+    size: 1Gi
+    storageClassName: ""
+  route:
+    enabled: true
+    host: ""             # vide = host généré par OpenShift
+    tls: true
+
+# ---------------------------------------------------------------------------
+# Scanner (CronJob)
+# ---------------------------------------------------------------------------
+scanner:
+  # Image pré-construite (recommandé en environnement offline)
+  image:
+    repository: ""        # Ex: registry.corp.local/diskover/diskover-scanner (obligatoire si build.enabled=false)
+    tag: ""               # Par défaut appVersion du Chart (2.3.5)
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { memory: 2Gi }
+  supplementalGroups: []   # GID(s) nécessaires pour lire vos partages (NFS/SMB)
+  extraArgs: ""            # arguments additionnels de diskover.py (ex: "--threads 8")
+
+# Un CronJob par entrée, données montées en lecture seule sur /data.
+# Deux façons de fournir les données :
+#   - nfs:    le chart crée le PV + PVC NFS (droits cluster-admin requis pour le PV)
+#   - volume: PVC existant (PV créé par votre admin)
+scans: []
+# scans:
+#   - name: projets
+#     schedule: "0 2 * * *"
+#     nfs:
+#       server: nas.example.com
+#       path: /export/projets
+#       size: 10Ti                       # indicatif
+#       mountOptions: [nfsvers=4.1, ro, noatime]
+#   - name: archives
+#     schedule: "0 3 * * 0"
+#     volume:
+#       persistentVolumeClaim:
+#         claimName: pvc-archives

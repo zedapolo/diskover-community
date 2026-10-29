@@ -1,0 +1,44 @@
+{{- /* PV + PVC NFS en lecture seule, créés pour chaque scan qui définit `nfs:`.
+       Un PV est cluster-scoped : l'installation Helm requiert alors des droits cluster-admin
+       (sinon, faites créer le PV par l'admin et utilisez `volume.persistentVolumeClaim`). */ -}}
+{{- $fn := include "diskover.fullname" . }}
+{{- range .Values.scans }}
+{{- if .nfs }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $fn }}-{{ $.Release.Namespace }}-{{ .name }}
+  labels:
+    {{- include "diskover.labels" $ | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .nfs.size | default "1Ti" }}
+  accessModes: [ReadOnlyMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    {{- toYaml (.nfs.mountOptions | default (list "nfsvers=4.1" "ro" "noatime")) | nindent 4 }}
+  nfs:
+    server: {{ .nfs.server }}
+    path: {{ .nfs.path }}
+    readOnly: true
+  claimRef:
+    namespace: {{ $.Release.Namespace }}
+    name: {{ $fn }}-scan-{{ .name }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $fn }}-scan-{{ .name }}
+  labels:
+    {{- include "diskover.labels" $ | nindent 4 }}
+spec:
+  accessModes: [ReadOnlyMany]
+  storageClassName: ""
+  volumeName: {{ $fn }}-{{ $.Release.Namespace }}-{{ .name }}
+  resources:
+    requests:
+      storage: {{ .nfs.size | default "1Ti" }}
+{{- end }}
+{{- end }}

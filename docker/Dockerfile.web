@@ -1,0 +1,16 @@
+FROM registry.access.redhat.com/ubi9/nginx-126:latest
+USER 0
+
+RUN dnf -y module enable php:8.3 \
+ && dnf -y install --setopt=install_weak_deps=False \
+      php-fpm php-cli php-gd php-mbstring php-xml php-pdo php-opcache \
+ && (dnf -y install php-ldap php-pecl-zip || true) \
+ && dnf clean all && rm -rf /var/cache/dnf \
+ && php -m | grep -i -E 'sqlite3|pdo_sqlite|gd|mbstring'
+
+COPY diskover-web /var/www/diskover-web
+RUN chgrp -R 0 /var/www/diskover-web && chmod -R g=u /var/www/diskover-web
+
+USER 1001
+EXPOSE 8080
+

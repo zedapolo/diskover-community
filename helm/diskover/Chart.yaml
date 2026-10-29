@@ -1,0 +1,7 @@
+apiVersion: v2
+appVersion: 2.3.5
+description: Diskover Community Edition (indexeur de fichiers + diskover-web) pour
+  OpenShift, avec Elasticsearch via l'opérateur ECK et images Red Hat UBI 9
+name: diskover
+type: application
+version: 0.1.0

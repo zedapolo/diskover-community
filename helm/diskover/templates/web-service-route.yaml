@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "diskover.fullname" . }}-web
+  labels:
+    {{- include "diskover.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: diskover
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: web
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- if .Values.web.route.enabled }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "diskover.fullname" . }}-web
+  labels:
+    {{- include "diskover.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.web.route.host }}
+  host: {{ . }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "diskover.fullname" . }}-web
+  port:
+    targetPort: http
+  {{- if .Values.web.route.tls }}
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  {{- end }}
+{{- end }}

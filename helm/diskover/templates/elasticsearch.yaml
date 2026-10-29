@@ -1,0 +1,44 @@
+{{- if .Values.elasticsearch.create }}
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: {{ .Values.elasticsearch.name }}
+  labels:
+    {{- include "diskover.labels" . | nindent 4 }}
+spec:
+  version: {{ .Values.elasticsearch.version | quote }}
+  {{- with .Values.elasticsearch.image }}
+  image: {{ . | quote }}
+  {{- end }}
+  http:
+    tls:
+      selfSignedCertificate:
+        disabled: {{ not .Values.elasticsearch.tls }}
+  nodeSets:
+    - name: default
+      count: {{ .Values.elasticsearch.count }}
+      config:
+        node.store.allow_mmap: false   # évite le sysctl vm.max_map_count (non privilégié sur OpenShift)
+        xpack.ml.enabled: false
+      podTemplate:
+        spec:
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: elasticsearch
+              resources:
+                {{- toYaml .Values.elasticsearch.resources | nindent 16 }}
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes: [ReadWriteOnce]
+            {{- with .Values.elasticsearch.storage.storageClassName }}
+            storageClassName: {{ . }}
+            {{- end }}
+            resources:
+              requests:
+                storage: {{ .Values.elasticsearch.storage.size }}
+{{- end }}

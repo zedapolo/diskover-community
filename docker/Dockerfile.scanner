@@ -1,0 +1,13 @@
+FROM registry.access.redhat.com/ubi9/python-312:latest
+USER 1001
+
+COPY --chown=1001:0 diskover /opt/diskover
+RUN pip install --no-cache-dir -r /opt/diskover/requirements.txt \
+ && chmod -R g=u /opt/diskover
+
+ENV HOME=/tmp \
+    XDG_CONFIG_HOME=/tmp/.config \
+    DATABASE=/tmp/diskoverdb.sqlite3
+
+WORKDIR /opt/diskover
+

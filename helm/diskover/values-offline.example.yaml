@@ -1,0 +1,61 @@
+# =============================================================================
+# Exemple de fichier de valeurs pour déploiement en environnement OFFLINE (Air-gap)
+# =============================================================================
+
+# 1. Désactiver la construction in-cluster
+build:
+  enabled: false
+
+# 2. Secret(s) d'authentification pour le registre interne d'entreprise (Harbor, Nexus, Quay...)
+# Créé au préalable :
+# oc create secret docker-registry regcred \
+#   --docker-server=registry.corp.local \
+#   --docker-username=... --docker-password=...
+imagePullSecrets:
+  - name: regcred
+
+# 3. Images pré-construites poussées sur votre registre interne
+web:
+  image:
+    repository: registry.corp.local/diskover/diskover-web
+    tag: "2.3.5"
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 5Gi
+    # storageClassName: ocs-storagecluster-ceph-rbd
+  route:
+    enabled: true
+    # host: diskover.apps.mon-cluster.corp.local
+    tls: true
+
+scanner:
+  image:
+    repository: registry.corp.local/diskover/diskover-scanner
+    tag: "2.3.5"
+    pullPolicy: IfNotPresent
+  supplementalGroups: [5000]       # GID autorisés sur vos exports NFS
+  extraArgs: "--threads 8"
+
+# 4. Elasticsearch ECK avec image miroir interne
+elasticsearch:
+  create: true
+  name: diskover
+  version: 8.19.0
+  image: registry.corp.local/elastic/elasticsearch:8.19.0
+  count: 1
+  resources:
+    requests: { cpu: "2", memory: 8Gi }
+    limits:   { memory: 8Gi }
+  storage:
+    size: 200Gi
+    # storageClassName: ocs-storagecluster-ceph-rbd
+
+# 5. Définition des scans planifiés (NFS internes)
+scans:
+  - name: share-prod
+    schedule: "0 2 * * *"
+    nfs:
+      server: nas.corp.local
+      path: /exports/data
+      mountOptions: [nfsvers=4.1, ro, noatime]
+

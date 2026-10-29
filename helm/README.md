@@ -3,7 +3,7 @@
 Déploie [Diskover Community Edition](https://github.com/diskoverdata/diskover-community) (indexeur de fichiers + interface `diskover-web`) sur OpenShift, avec :
 
 - **Elasticsearch 8.x** géré par l'opérateur **ECK** (Elastic Cloud on Kubernetes) ;
-- des **images Red Hat UBI 9** construites dans le cluster (BuildConfig / ImageStream) OU des **images pré-construites** poussées sur votre registre interne (Harbor, Nexus, Quay...) pour un fonctionnement **100 % hors-ligne (Air-gap / Déconnecté)** ;
+- des **images Red Hat UBI 9** construites dans le cluster (BuildConfig / ImageStream) OU des **images pré-construites (avec Podman)** poussées sur votre registre interne (Harbor, Nexus, Quay...) pour un fonctionnement **100 % hors-ligne (Air-gap / Déconnecté)** ;
 - des **scans planifiés** (CronJob) de partages **NFS** montés en lecture seule.
 
 ## Architecture
@@ -25,7 +25,7 @@ Déploie [Diskover Community Edition](https://github.com/diskoverdata/diskover-c
             └────────────────────────────┘
 ```
 
-| Composant | Image de base Red Hat | Mode connecté (Build OpenShift) | Mode hors-ligne / Air-gap (Images pré-construites) |
+| Composant | Image de base Red Hat | Mode connecté (Build OpenShift) | Mode hors-ligne / Air-gap (Images pré-construites avec Podman) |
 |---|---|---|---|
 | Scanner (`diskover.py`) | `registry.access.redhat.com/ubi9/python-312` | BuildConfig `<release>-scanner` | `scanner.image.repository` (ex: `registry.corp.local/diskover/scanner:2.3.5`) |
 | diskover-web | `registry.access.redhat.com/ubi9/nginx-126` + PHP 8.3 | BuildConfig `<release>-web` | `web.image.repository` (ex: `registry.corp.local/diskover/web:2.3.5`) |
@@ -46,58 +46,59 @@ Les images s'exécutent en UID arbitraire (compatibilité SCC `restricted-v2` Op
 
 ## Déploiement en Environnement Déconnecté (Offline / Air-gap)
 
-En environnement déconnecté, le cluster n'a pas accès à Internet (ni à GitHub, ni à PyPI, ni aux registres publics). La méthode standard et recommandée consiste à désactiver les `BuildConfig` in-cluster et à utiliser des **images conteneurs pré-construites** poussées sur votre registre privé d'entreprise.
+En environnement déconnecté, la méthode standard consiste à désactiver les `BuildConfig` (`build.enabled: false`) et à déployer des images pré-construites avec **Podman**.
 
-### 1. Préparer les images en zone connectée (Machine Bastion / CI)
+> [!NOTE]
+> **Authentification registre :** Si les identifiants d'accès à votre registre privé sont déjà embarqués au niveau d'OpenShift (pull-secret global du cluster dans `openshift-config` ou secrets liés aux ServiceAccounts), vous n'avez **aucun secret `imagePullSecrets` à configurer**. OpenShift s'authentifie automatiquement.
 
-Depuis une machine connectée à Internet avec Docker/Podman :
+### 1. Construire et transférer les images avec Podman
+
+Depuis une machine connectée (bastion / poste de dev) :
 
 ```bash
-# Récupérer le code source
+# Cloner le dépôt
 git clone -b v2.3.5 https://github.com/diskoverdata/diskover-community.git
 cd diskover-community
 
-# Construire les images Diskover
-docker build -t registry.corp.local/diskover/diskover-web:2.3.5 -f docker/Dockerfile.web .
-docker build -t registry.corp.local/diskover/diskover-scanner:2.3.5 -f docker/Dockerfile.scanner .
+# Construire les images applicatives avec Podman
+podman build -t registry.corp.local/diskover/diskover-web:2.3.5 -f docker/Dockerfile.web .
+podman build -t registry.corp.local/diskover/diskover-scanner:2.3.5 -f docker/Dockerfile.scanner .
 
-# Récupérer l'image Elasticsearch officielle 8.19.0
-docker pull docker.elastic.co/elasticsearch/elasticsearch:8.19.0
-docker tag docker.elastic.co/elasticsearch/elasticsearch:8.19.0 registry.corp.local/elastic/elasticsearch:8.19.0
+# Récupérer l'image Elasticsearch 8.19.0 officielle
+podman pull docker.elastic.co/elasticsearch/elasticsearch:8.19.0
+podman tag docker.elastic.co/elasticsearch/elasticsearch:8.19.0 registry.corp.local/elastic/elasticsearch:8.19.0
 
-# Pousser les images vers le registre privé (ou skopeo copy / save tarball)
-docker push registry.corp.local/diskover/diskover-web:2.3.5
-docker push registry.corp.local/diskover/diskover-scanner:2.3.5
-docker push registry.corp.local/elastic/elasticsearch:8.19.0
+# Option A : Pousser directement vers votre registre interne (si réseau accessible)
+podman push registry.corp.local/diskover/diskover-web:2.3.5
+podman push registry.corp.local/diskover/diskover-scanner:2.3.5
+podman push registry.corp.local/elastic/elasticsearch:8.19.0
+
+# Option B : Export archive tar (si transfert manuel en zone étanche / sas)
+podman save -m -o diskover-airgap-images.tar \
+  registry.corp.local/diskover/diskover-web:2.3.5 \
+  registry.corp.local/diskover/diskover-scanner:2.3.5 \
+  registry.corp.local/elastic/elasticsearch:8.19.0
+
+# (Puis en zone déconnectée :)
+podman load -i diskover-airgap-images.tar
+podman push registry.corp.local/diskover/diskover-web:2.3.5
+podman push registry.corp.local/diskover/diskover-scanner:2.3.5
+podman push registry.corp.local/elastic/elasticsearch:8.19.0
 ```
 
-### 2. Configurer le secret de tirage d'images (`imagePullSecrets`)
+### 2. Fichier de valeurs pour l'environnement hors-ligne
 
-Dans le namespace OpenShift de destination :
-
-```bash
-oc new-project diskover
-oc create secret docker-registry regcred \
-  --docker-server=registry.corp.local \
-  --docker-username="<mon-user>" \
-  --docker-password="<mon-mot-de-passe>" \
-  --docker-email="infra@corp.local"
-```
-
-### 3. Fichier de valeurs pour l'environnement hors-ligne
-
-Créez un fichier `values-offline.yaml` (un modèle complet est disponible dans `helm/diskover/values-offline.example.yaml`) :
+Créez un fichier `values-offline.yaml` (modèle disponible dans [`helm/diskover/values-offline.example.yaml`](diskover/values-offline.example.yaml)) :
 
 ```yaml
-# Désactiver le build OpenShift
+# Désactiver le build OpenShift in-cluster
 build:
   enabled: false
 
-# Secret d'authentification pour votre registre miroir
-imagePullSecrets:
-  - name: regcred
+# Laisser vide : les credentials de registre sont déjà intégrés dans OpenShift
+imagePullSecrets: []
 
-# Images pré-construites
+# Images pré-construites avec Podman
 web:
   image:
     repository: registry.corp.local/diskover/diskover-web
@@ -128,9 +129,10 @@ scans:
       mountOptions: [nfsvers=4.1, ro, noatime]
 ```
 
-### 4. Déploiement
+### 3. Déploiement
 
 ```bash
+oc new-project diskover
 helm install diskover ./helm/diskover -f values-offline.yaml
 ```
 
@@ -160,14 +162,14 @@ Puis ⚙ → **Indices** → sélectionner l'index `diskover-<nom>-<date>` → *
 
 | Paramètre | Défaut | Description |
 |---|---|---|
-| `imagePullSecrets` | `[]` | Liste de secrets (`[{name: "regcred"}]`) pour s'authentifier au registre privé |
+| `imagePullSecrets` | `[]` | Secrets de registre (inutile si les credentials sont déjà dans OpenShift) |
 | `web.image.repository` | `""` | Dépôt de l'image diskover-web pré-construite (ex: `registry.corp/diskover-web`) |
 | `web.image.tag` | `""` (défaut: `appVersion`) | Tag de l'image web |
 | `web.image.pullPolicy` | `IfNotPresent` | Politique de pull (`IfNotPresent`, `Always`) |
 | `scanner.image.repository` | `""` | Dépôt de l'image scanner pré-construite (ex: `registry.corp/diskover-scanner`) |
 | `scanner.image.tag` | `""` (défaut: `appVersion`) | Tag de l'image scanner |
 | `scanner.image.pullPolicy` | `IfNotPresent` | Politique de pull (`IfNotPresent`, `Always`) |
-| `elasticsearch.image` | `""` | Image personnalisée/miroir d'Elasticsearch (ex: `registry.corp/elastic/elasticsearch:8.19.0`) |
+| `elasticsearch.image` | `""` | Image Elasticsearch sur votre registre miroir (ex: `registry.corp/elastic/elasticsearch:8.19.0`) |
 
 ### Build in-cluster (OpenShift BuildConfig)
 
@@ -247,7 +249,7 @@ oc rollout restart deploy/diskover-web
 
 | Symptôme | Piste |
 |---|---|
-| Pods web en `ImagePullBackOff` | En mode offline : vérifier `web.image.repository` et le secret `imagePullSecrets`. En mode build : vérifier `oc get builds`. |
+| Pods web en `ImagePullBackOff` | En mode offline : vérifier `web.image.repository` et l'accès au registre interne depuis les nœuds OpenShift. En mode build : vérifier `oc get builds`. |
 | Échec de build sur `dnf` ou `pip` | Pas d'accès Internet : passer en mode images pré-construites (`build.enabled: false`). |
 | `Failed to connect to Elasticsearch` | ECK ne surveille pas le namespace, cluster pas encore `green`, ou `ES_HTTPS` incohérent avec `elasticsearch.tls`. |
 | Erreur 500 / `is not writable` sur diskover-web | Droits PVC : `oc logs deploy/diskover-web -c php-fpm`. |

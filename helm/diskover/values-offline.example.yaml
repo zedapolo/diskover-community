@@ -2,19 +2,18 @@
 # Exemple de fichier de valeurs pour déploiement en environnement OFFLINE (Air-gap)
 # =============================================================================
 
-# 1. Désactiver la construction in-cluster
+# 1. Désactiver la construction in-cluster OpenShift (BuildConfigs)
 build:
   enabled: false
 
-# 2. Secret(s) d'authentification pour le registre interne d'entreprise (Harbor, Nexus, Quay...)
-# Créé au préalable :
-# oc create secret docker-registry regcred \
-#   --docker-server=registry.corp.local \
-#   --docker-username=... --docker-password=...
-imagePullSecrets:
-  - name: regcred
+# 2. Secret(s) d'authentification pour le registre interne d'entreprise
+# Si les credentials de votre registre interne sont déjà embarqués dans OpenShift
+# (ex: pull secret global du cluster ou secrets liés aux ServiceAccounts),
+# laissez cette liste vide ([]).
+imagePullSecrets: []
+# - name: regcred
 
-# 3. Images pré-construites poussées sur votre registre interne
+# 3. Images pré-construites avec Podman et poussées sur votre registre interne
 web:
   image:
     repository: registry.corp.local/diskover/diskover-web
@@ -58,4 +57,3 @@ scans:
       server: nas.corp.local
       path: /exports/data
       mountOptions: [nfsvers=4.1, ro, noatime]
-

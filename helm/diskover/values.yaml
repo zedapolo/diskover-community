@@ -2,7 +2,8 @@ nameOverride: ""
 fullnameOverride: ""
 
 # Secrets d'authentification pour registres privés (ex: Harbor, Nexus, Quay)
-# Utile en environnement déconnecté / offline
+# Laisser vide ([]) si les credentials de registre sont déjà configurés dans OpenShift
+# (ex: pull secret global du cluster openshift-config/pull-secret ou lié aux ServiceAccounts).
 imagePullSecrets: []
 # - name: regcred
 
@@ -17,7 +18,7 @@ images:
 # ---------------------------------------------------------------------------
 # Build des images dans OpenShift (BuildConfig + ImageStream)
 # En environnement offline : passer enabled à false et renseigner web.image.repository
-# et scanner.image.repository pour utiliser vos images pré-construites.
+# et scanner.image.repository pour utiliser vos images pré-construites (ex: via Podman).
 # ---------------------------------------------------------------------------
 build:
   enabled: true
@@ -93,16 +94,3 @@ scanner:
 #   - nfs:    le chart crée le PV + PVC NFS (droits cluster-admin requis pour le PV)
 #   - volume: PVC existant (PV créé par votre admin)
 scans: []
-# scans:
-#   - name: projets
-#     schedule: "0 2 * * *"
-#     nfs:
-#       server: nas.example.com
-#       path: /export/projets
-#       size: 10Ti                       # indicatif
-#       mountOptions: [nfsvers=4.1, ro, noatime]
-#   - name: archives
-#     schedule: "0 3 * * 0"
-#     volume:
-#       persistentVolumeClaim:
-#         claimName: pvc-archives
